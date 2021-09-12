@@ -1,0 +1,48 @@
+version: '3'
+services:
+  glow-trap:
+    build: .
+    volumes:
+      - ./data/dhcp/dhcpd.conf:/etc/dhcp/dhcpd.conf
+      - ./data/chrony/chrony.conf:/etc/chrony/chrony.conf
+    environment:
+      - INFLUXDB_V2_URL=http://influxdb:8086
+      - INFLUXDB_V2_ORG=demo-org
+      - INFLUXDB_V2_TOKEN=demo-insecure-admin-token
+      - GLOW_TRAP_INFLUXDB_BUCKET=glow-trap
+      - GLOW_TRAP_DNS_PORT=53
+      - GLOW_TRAP_HTTPS_PORT=443
+      - GLOW_TRAP_HTTPS_PUBLIC_HOST=192.168.101.2
+    networks:
+      default: {}
+      meter:
+        ipv4_address: 192.168.101.2
+
+  influxdb:
+    image: influxdb:2.0-alpine
+    volumes:
+      - ./data/influxdb2:/var/lib/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=demo
+      - DOCKER_INFLUXDB_INIT_PASSWORD=demo-insecure
+      - DOCKER_INFLUXDB_INIT_ORG=demo-org
+      - DOCKER_INFLUXDB_INIT_BUCKET=glow-trap
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=demo-insecure-admin-token
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - 3000:3000
+    volumes:
+      - ./data/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./data/grafana/provisioning:/etc/grafana/provisioning
+
+networks:
+  meter:
+    driver: ipvlan
+    driver_opts:
+      parent: eth0.101
+    ipam:
+      config:
+        - subnet: 192.168.101.0/24

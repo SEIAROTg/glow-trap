@@ -1,0 +1,3 @@
+aiohttp
+dnslib
+influxdb-client
