@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import datetime
 import logging
 import os
 import ssl
@@ -25,6 +26,8 @@ KEY_PATH = os.path.join(os.path.dirname(__file__), 'key.pem')
 CERT_PATH = os.path.join(os.path.dirname(__file__), 'cert.pem')
 
 LOG_PATH = os.getenv('GLOW_TRAP_LOG_PATH', '')
+
+ZIGBEE_EPOCH = int(datetime.datetime(2000, 1, 1, tzinfo=datetime.timezone.utc).timestamp())
 
 
 def get_logger():
@@ -109,47 +112,45 @@ class HTTPSServer:
     async def _handle_price(self, req):
         body = await req.text()
         lines = body.split('\r\n')
-        eprice_line = lines[0].split('EPRICE:', 1)[1]
-        eprice_segs = eprice_line.split(',')
-        price_label = eprice_segs[3]
-        unit_price = decode_hex(eprice_segs[12])
+        eprice_segs = lines[0].removeprefix('EPRICE:').split(',')
+        estdchg_segs = lines[1].removeprefix('ESTDCHG:').split(',')
 
-        estdchg_line = lines[1].split('ESTDCHG:', 1)[1]
-        estdchg_segs = estdchg_line.split(',')
-        standing_charge = decode_hex(estdchg_segs[0])
-
-        self._influx_write_api.write(INFLUXDB_BUCKET, record=[{
-            'measurement': 'price',
-            'tags': {
-                'device_id': req.headers['X-ID'],
-            },
-            'time': decode_hex(req.headers['X-TS']) * 10 ** 9,
-            'fields': {
-                'unit_price': unit_price,
-                'standing_charge': standing_charge,
-            },
-        }])
+        self._influx_write_api.write(INFLUXDB_BUCKET, record=dict(
+            measurement='price',
+            tags=dict(
+                device_id=req.headers['X-ID'],
+            ),
+            time=decode_hex(req.headers['X-TS']) * 10 ** 9,
+            fields=dict(
+                unit_price=decode_hex(eprice_segs[12]),
+                standing_charge=decode_hex(estdchg_segs[0]),
+                current_time=(ZIGBEE_EPOCH + decode_hex(eprice_segs[5])) * 10 ** 9,
+                start_time=(ZIGBEE_EPOCH + decode_hex(eprice_segs[10])) * 10 ** 9,
+            ),
+        ))
 
     async def _handle_reading(self, req):
         data = await req.json()
-        point = {
-            'measurement': 'reading',
-            'tags': {
-                'device_id': req.headers['X-ID'],
-            },
-            'time': decode_hex(data['time']) * 10 ** 9,
-            'fields': {
-                'status': data['pan']['status'],
-                'lqi': decode_hex(data['pan']['lqi']),
-                'rssi': decode_hex(data['pan']['rssi'], signed=True),
-                'header_time': decode_hex(req.headers['X-TS']),
-            },
-        }
-        meter = data.get('elecMtr', {}).get('0702')
-        if meter:
-            point['fields']['reading'] = decode_hex(meter['00']['00'])
-            point['fields']['instant'] = decode_hex(meter['04']['00'], signed=True)
-        self._influx_write_api.write(INFLUXDB_BUCKET, record=point)
+        tags = dict(
+            device_id=req.headers['X-ID'],
+        )
+        fields = dict(
+            status=data['pan']['status'],
+            lqi=decode_hex(data['pan']['lqi']),
+            rssi=decode_hex(data['pan']['rssi'], signed=True),
+            header_time=decode_hex(req.headers['X-TS']),
+        )
+        if (meter := data.get('elecMtr')) and (reading := meter.get('0702')):
+            fields['reading'] = decode_hex(reading['00']['00'])
+            tags['mpan'] = reading['03']['07']
+            fields['instant'] = decode_hex(reading['04']['00'], signed=True)
+
+        self._influx_write_api.write(INFLUXDB_BUCKET, record=dict(
+            measurement='reading',
+            tags=tags,
+            time=decode_hex(data['time']) * 10 ** 9,
+            fields=fields,
+        ))
 
 
 if __name__ == '__main__':
