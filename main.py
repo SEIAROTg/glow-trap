@@ -86,7 +86,7 @@ class HTTPSServer:
         self._influx_write_api = influx_client.write_api()
 
         logging.getLogger('aiohttp').setLevel(logging.CRITICAL + 1)
-        ssl_context = ssl.SSLContext()
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ssl_context.load_cert_chain(CERT_PATH, KEY_PATH)
         app = web.Application()
         app.add_routes([
