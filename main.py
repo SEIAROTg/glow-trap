@@ -153,5 +153,5 @@ class HTTPSServer:
 
 
 if __name__ == '__main__':
-    threading.Thread(target=DNSServer().start).start()
+    threading.Thread(target=DNSServer().start, daemon=True).start()
     HTTPSServer().start()
