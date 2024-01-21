@@ -98,8 +98,9 @@ class HTTPSServer:
         body = await req.text()
         try:
             if body.startswith('EPRICE:'):
-                return await self._handle_price(req)
-            return await self._handle_reading(req)
+                await self._handle_price(req)
+            else:
+                await self._handle_reading(req)
         except Exception:
             logger.exception(
                 f'Error processing request:\nheaders={req.headers!r}\nbody={body}')
