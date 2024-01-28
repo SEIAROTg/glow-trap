@@ -5,6 +5,7 @@ import logging
 import os
 import ssl
 import threading
+import time
 
 from aiohttp import web
 import dnslib
@@ -87,6 +88,7 @@ class HTTPSServer:
     def start(self):
         influx_client = influxdb_client.InfluxDBClient.from_env_properties()
         self._influx_write_api = influx_client.write_api()
+        self._last_price_time = 0
 
         logging.getLogger('aiohttp').setLevel(logging.CRITICAL + 1)
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -102,12 +104,16 @@ class HTTPSServer:
         try:
             if body.startswith('EPRICE:'):
                 await self._handle_price(req)
+                self._last_price_time = time.time_ns()
             else:
                 await self._handle_reading(req)
         except Exception:
             logger.exception(
                 f'Error processing request:\nheaders={req.headers!r}\nbody={body}')
-        return web.Response(text='200')
+        if time.time_ns() - self._last_price_time > 10 * 60 * 10 ** 9:  # 10 min
+            return web.Response(text='CURPRICE')
+        else:
+            return web.Response(text='200')
 
     async def _handle_price(self, req):
         body = await req.text()
